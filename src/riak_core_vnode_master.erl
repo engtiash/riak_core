@@ -35,7 +35,7 @@
          sync_spawn_command/3, make_request/3,
          make_coverage_request/4, all_nodes/1, reg_name/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-	 terminate/2, code_change/3]).
+	 terminate/2, code_change/3,vmaster_to_vmod/1]).
 -record(state, {idxtab, sup_name, vnode_mod, legacy}).
 
 -define(LONG_TIMEOUT, 120*1000).
@@ -45,6 +45,7 @@ reg_name(VNodeMod) ->  make_name(VNodeMod, "_master").
 
 %% Given atom 'riak_kv_vnode_master', return 'riak_kv_vnode'.
 vmaster_to_vmod(VMaster) ->
+  error_logger:info_msg("helper Vmaster ~p",[VMaster]),
     L = atom_to_list(VMaster),
     list_to_atom(lists:sublist(L,length(L)-7)).
 
@@ -79,23 +80,28 @@ command_unreliable(PrefListOrCmd, Msg, Sender, VMaster) ->
 
 %% Send the command to the preflist given with responses going to Sender
 command2([], _Msg, _Sender, _VMaster, _How) ->
+  error_logger:info_msg("helper co1"),
     ok;
 
 command2([{Index, Pid}|Rest], Msg, Sender, VMaster, How=normal)
   when is_pid(Pid) ->
     gen_fsm:send_event(Pid, make_request(Msg, Sender, Index)),
+  error_logger:info_msg("helper co2"),
     command2(Rest, Msg, Sender, VMaster, How);
 
 command2([{Index, Pid}|Rest], Msg, Sender, VMaster, How=unreliable)
   when is_pid(Pid) ->
+  error_logger:info_msg("helper co3"),
     riak_core_send_msg:send_event_unreliable(Pid, make_request(Msg, Sender,
                                                                Index)),
     command2(Rest, Msg, Sender, VMaster, How);
 command2([{Index,Node}|Rest], Msg, Sender, VMaster, How) ->
+  error_logger:info_msg("helper co4"),
     proxy_cast({VMaster, Node}, make_request(Msg, Sender, Index), How),
     command2(Rest, Msg, Sender, VMaster, How);
 
 command2(DestTuple, Msg, Sender, VMaster, How) when is_tuple(DestTuple) ->
+  error_logger:info_msg("helper co5"),
     %% Final case, tuple = single destination ... so make a list and
     %% resubmit to this function.
     command2([DestTuple], Msg, Sender, VMaster, How).
@@ -157,6 +163,7 @@ sync_spawn_command({Index,Node}, Msg, VMaster) ->
 %% Make a request record - exported for use by legacy modules
 -spec make_request(vnode_req(), sender(), partition()) -> #riak_vnode_req_v1{}.
 make_request(Request, Sender, Index) ->
+  error_logger:info_msg("helper Request~p, Sender ~p , Index ~p",[Request, Sender, Index]),
     #riak_vnode_req_v1{
               index=Index,
               sender=Sender,
@@ -193,28 +200,36 @@ proxy_cast({VMaster, Node}, Req, How) ->
     case riak_core_capability:get({riak_core, vnode_routing}, legacy) of
         legacy ->
             if How == normal ->
+              error_logger:info_msg(" helper  legacy normal"),
                     gen_server:cast({VMaster, Node}, Req);
                How == unreliable ->
+                 error_logger:info_msg(" helper  legacy unreliable"),
                     riak_core_send_msg:cast_unreliable({VMaster, Node}, Req)
             end;
         proxy ->
+          error_logger:info_msg(" helper proxy  cast  proxy"),
             do_proxy_cast({VMaster, Node}, Req, How)
     end.
 
 do_proxy_cast({VMaster, Node}, Req=?VNODE_REQ{index=Idx}, How) ->
+  error_logger:info_msg(" helper  do  proxy 1 , Req = ~p",[Req]),
     Mod = vmaster_to_vmod(VMaster),
     Proxy = riak_core_vnode_proxy:reg_name(Mod, Idx, Node),
     send_an_event(Proxy, Req, How),
     ok;
 do_proxy_cast({VMaster, Node}, Req=?COVERAGE_REQ{index=Idx}, How) ->
+  error_logger:info_msg(" helper  do  proxy 2"),
     Mod = vmaster_to_vmod(VMaster),
     Proxy = riak_core_vnode_proxy:reg_name(Mod, Idx, Node),
     send_an_event(Proxy, Req, How),
     ok.
 
 send_an_event(Dest, Event, normal) ->
+  error_logger:info_msg(" helper send   event Dest ~p , Event ~p , normal ",[Dest, Event]),
+  % helper send   event Dest {proxy_riak_kv_vnode_822094670998632891489572718402909198556462055424,'dev1@127.0.0.1'}
     gen_fsm:send_event(Dest, Event);
 send_an_event(Dest, Event, unreliable) ->
+  error_logger:info_msg(" helper send   event Dest ~p , Event ~p , unreliable ",[Dest, Event]),
     riak_core_send_msg:send_event_unreliable(Dest, Event).
 
 handle_cast({wait_for_service, Service}, State) ->
